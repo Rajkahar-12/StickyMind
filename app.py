@@ -27,7 +27,15 @@ app.config.from_object(Config)
 @contextmanager
 def get_db():
     """Yield a SQLite connection, commit on success, close always."""
-    conn = sqlite3.connect(app.config["DATABASE"])
+    db_path = app.config["DATABASE"]
+    
+    # FIX: Automatically create the directory for the database if it doesn't exist
+    # This solves the Render "unable to open database file" error.
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -263,8 +271,9 @@ def delete_note(note_id):
 def vapid_public_key():
     path = app.config["VAPID_PUBLIC_KEY"]
     if not os.path.exists(path):
+        app.logger.error(f"VAPID public key missing at: {path}")
         return jsonify({
-            "error": "VAPID keys not generated. Run: python generate_vapid.py"
+            "error": "VAPID public key missing on server. Check Render Secret Files."
         }), 500
     with open(path) as f:
         return jsonify({"publicKey": f.read().strip()})
@@ -313,6 +322,7 @@ def send_push_to_all(payload: dict) -> int:
     """Send a push payload to all subscriptions. Returns success count."""
     priv = app.config["VAPID_PRIVATE_KEY"]
     if not os.path.exists(priv):
+        app.logger.warning(f"VAPID private key missing at: {priv}")
         return 0
 
     with get_db() as conn:
@@ -329,20 +339,24 @@ def send_push_to_all(payload: dict) -> int:
             "endpoint": sub["endpoint"],
             "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
         }
-
+        
+        parsed_endpoint = urlparse(sub["endpoint"])
+        audience = f"{parsed_endpoint.scheme}://{parsed_endpoint.netloc}"
+        
         try:
             webpush(
                 subscription_info=info,
                 data=json.dumps(payload),
                 vapid_private_key=priv,
-                # Only 'sub' is required. pywebpush automatically handles the 'aud' claim.
-                vapid_claims={"sub": app.config["VAPID_SUBJECT"]},
-                ttl=86400,  # CRITICAL FIX: Set TTL to 24 hours
+                vapid_claims={
+                    "sub": app.config["VAPID_SUBJECT"],
+                    "aud": audience
+                },
+                ttl=86400,  # 24 hours
             )
             sent += 1
         except WebPushException as e:
             status = getattr(e.response, "status_code", None)
-            # Treat 400 (Bad Request) as a permanently broken subscription and remove it
             if status in (400, 404, 410):
                 expired.append(sub["endpoint"])
                 app.logger.warning(f"Removing invalid subscription: {sub['endpoint']}")
@@ -380,7 +394,7 @@ def check_reminders():
                 reminder_dt = reminder_dt.replace(tzinfo=tz)
 
             if reminder_dt > now_dt:
-                continue  # not due yet
+                continue
 
             body = (note["content"] or "").strip()
             send_push_to_all({
