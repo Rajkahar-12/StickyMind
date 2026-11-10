@@ -29,11 +29,16 @@ def get_db():
     """Yield a SQLite connection, commit on success, close always."""
     db_path = app.config["DATABASE"]
     
-    # FIX: Automatically create the directory for the database if it doesn't exist
-    # This solves the Render "unable to open database file" error.
+    # FIX: Only try to create the directory if it's a path and doesn't exist.
+    # This prevents permission errors on Render's read-only filesystems.
     db_dir = os.path.dirname(db_path)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
+    if db_dir and not os.path.exists(db_dir):
+        try:
+            os.makedirs(db_dir, exist_ok=True)
+        except PermissionError:
+            # If we can't create the dir, fail gracefully
+            app.logger.error(f"Permission denied creating database directory: {db_dir}")
+            raise
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -445,3 +450,4 @@ def server_error(e):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+  
