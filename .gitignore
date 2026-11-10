@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# Database
+*.db
+*.sqlite3
+database.db
+
+# Secrets & Keys
+vapid_private.pem
+*.pem
+
+# Environment
+.env

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StickyMind — A little space for your thoughts.</title>
+  <meta name="theme-color" content="#F7F4EC">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <div class="overlay" id="overlay"></div>
+
+  <!-- Sidebar (Desktop) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-logo">✎</div>
+      <div>
+        <h1>StickyMind</h1>
+        <p class="tagline">A little space for your thoughts.</p>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="all">
+        <span class="nav-icon">📄</span> All Notes
+      </button>
+      <button class="nav-item" data-view="today">
+        <span class="nav-icon">☀️</span> Today
+      </button>
+      <button class="nav-item" data-view="upcoming">
+        <span class="nav-icon">⏳</span> Upcoming
+      </button>
+      <button class="nav-item" data-view="pinned">
+        <span class="nav-icon">📌</span> Pinned
+      </button>
+
+      <div class="nav-divider">Categories</div>
+
+      <button class="nav-item" data-view="Study">
+        <span class="nav-icon cat-dot sage"></span> Study
+      </button>
+      <button class="nav-item" data-view="Work">
+        <span class="nav-icon cat-dot blue"></span> Work
+      </button>
+      <button class="nav-item" data-view="Personal">
+        <span class="nav-icon cat-dot rose"></span> Personal
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="stat">
+        <span class="stat-label">Total thoughts</span>
+        <span class="stat-value" id="totalCount">0</span>
+      </div>
+      <button class="theme-toggle" id="themeToggle">
+        <span id="themeIcon">🌙</span> <span id="themeLabel">Dark mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Workspace -->
+  <main class="main">
+    <header class="topbar">
+      <div class="header-left">
+        <p class="greeting" id="greetingText">Good morning</p>
+        <h2 class="workspace-title">Your workspace</h2>
+        <p class="workspace-desc">Everything you want to remember, in one place.</p>
+        <p class="current-date" id="currentDate">Date</p>
+      </div>
+      
+      <div class="header-actions">
+        <div class="search-wrapper">
+          <span class="search-icon">⌕</span>
+          <input type="search" id="searchInput" placeholder="Search your notes..." aria-label="Search notes">
+        </div>
+        <button class="btn btn-secondary notif-btn" id="notifBtn" title="Enable Notifications">🔔</button>
+        <button class="btn btn-primary desktop-new-btn" id="newNoteBtn">+ New Note</button>
+      </div>
+    </header>
+
+    <section class="content">
+      <!-- Mobile Category Filters -->
+      <div class="mobile-filters" id="mobileFilters">
+        <button class="chip active" data-view="all">All</button>
+        <button class="chip" data-view="today">Today</button>
+        <button class="chip" data-view="upcoming">Upcoming</button>
+        <button class="chip" data-view="Study">Study</button>
+        <button class="chip" data-view="Work">Work</button>
+        <button class="chip" data-view="Personal">Personal</button>
+      </div>
+
+      <div class="content-header">
+        <h3 id="viewTitle">All Notes</h3>
+        <span class="view-count" id="viewCount"></span>
+      </div>
+
+      <!-- Sticky Notes Grid -->
+      <div class="notes-grid" id="notesGrid"></div>
+    </section>
+  </main>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="bottom-nav-item active" data-view="all">
+      <span>📄</span> All
+    </button>
+    <button class="bottom-nav-item" data-view="today">
+      <span>☀️</span> Today
+    </button>
+    <button class="bottom-nav-item fab-wrapper" id="mobileNewBtn">
+      <div class="fab">+</div>
+    </button>
+    <button class="bottom-nav-item" data-view="pinned">
+      <span>📌</span> Pinned
+    </button>
+    <button class="bottom-nav-item" id="mobileSettings">
+      <span>⚙️</span> Menu
+    </button>
+  </nav>
+
+  <!-- Note Editor Modal -->
+  <div class="modal-overlay" id="noteModal" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle" class="handwritten">New Note</h3>
+        <button class="modal-close" id="modalClose" aria-label="Close">×</button>
+      </div>
+
+      <label class="field">
+        <input type="text" id="noteTitle" maxlength="100" placeholder="Title" class="note-title-input">
+      </label>
+
+      <label class="field">
+        <textarea id="noteContent" rows="8" maxlength="5000" placeholder="Write your thoughts here..." class="note-content-input"></textarea>
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>Category</span>
+          <select id="noteCategory">
+            <option value="Personal">Personal</option>
+            <option value="Study">Study</option>
+            <option value="Work">Work</option>
+          </select>
+        </label>
+
+        <div class="field">
+          <span>Paper Color</span>
+          <div class="color-picker" id="colorPicker">
+            <button class="swatch" data-color="yellow" style="background:#F2D98D"></button>
+            <button class="swatch" data-color="pink"   style="background:#DCA9A0"></button>
+            <button class="swatch" data-color="blue"   style="background:#A9C6D5"></button>
+            <button class="swatch" data-color="green"  style="background:#A8B89A"></button>
+            <button class="swatch" data-color="purple" style="background:#D1C4E9"></button>
+          </div>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Reminder (optional)</span>
+        <input type="datetime-local" id="noteReminder">
+      </label>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="cancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="saveBtn">Save Note</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
