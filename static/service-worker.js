@@ -1,7 +1,9 @@
-/* StickyMind Service Worker — PWA caching + push */
+/* StickyMind Service Worker */
+'use strict';
 
-const CACHE_NAME = 'stickymind-v1';
-const ASSETS = [
+const CACHE_NAME = 'stickymind-v4';   // bump this when app.js/style.css change
+
+const APP_SHELL = [
   '/',
   '/static/css/style.css',
   '/static/js/app.js',
@@ -12,7 +14,7 @@ const ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).catch(() => {})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).catch(() => {})
   );
   self.skipWaiting();
 });
@@ -26,55 +28,80 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+/* Network-first for navigation, cache-first for assets */
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  if (request.method !== 'GET') return;
-  if (request.url.includes('/api/')) return; // never cache API
+  const req = event.request;
 
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request)
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;   // never cache API
+
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
         .then((res) => {
-          if (res.ok && res.type === 'basic') {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
-          }
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
           return res;
         })
-        .catch(() => cached);
+        .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(req).then((hit) => {
+      if (hit) return hit;
+      return fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      });
     })
   );
 });
 
+/* Push notifications — show + tell every open tab to beep */
 self.addEventListener('push', (event) => {
   let payload = { title: 'StickyMind', body: 'You have a reminder', note_id: null };
   if (event.data) {
     try { payload = { ...payload, ...event.data.json() }; } catch { /* ignore */ }
   }
 
+  const tag = payload.note_id ? `note-${payload.note_id}` : 'stickymind-reminder';
+
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: '/static/icons/icon-192.png',
-      badge: '/static/icons/icon-192.png',
-      tag: payload.note_id ? `note-${payload.note_id}` : undefined,
-      data: { note_id: payload.note_id },
-      vibrate: [100, 50, 100],
-    })
+    Promise.all([
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: '/static/icons/icon-192.png',
+        badge: '/static/icons/icon-192.png',
+        tag,
+        vibrate: [200, 100, 200],
+        data: { note_id: payload.note_id, url: '/' },
+      }),
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => clients.forEach((c) => {
+          try { c.postMessage({ type: 'PLAY_BEEP' }); } catch { /* ignore */ }
+        })),
+    ])
   );
 });
 
+/* Click on a notification → focus or open the app */
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const client of list) {
-        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.registration.scope) && 'focus' in client) {
           return client.focus();
         }
       }
-      return self.clients.openWindow('/');
+      if (self.clients.openWindow) return self.clients.openWindow('/');
     })
   );
 });
