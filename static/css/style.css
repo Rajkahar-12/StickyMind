@@ -59,10 +59,22 @@ html, body {
   height: 100%;
   font-family: 'DM Sans', sans-serif;
   background-color: var(--bg);
-  background-image: var(--paper-grain);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 0%,   rgba(168, 184, 154, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 60% at 95% 100%, rgba(169, 198, 213, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 50% at 50% 50%,  rgba(220, 169, 160, 0.05) 0%, transparent 60%),
+    var(--paper-grain);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.3s, color 0.3s;
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] body {
+  background-image:
+    radial-gradient(ellipse 80% 60% at 10% 0%,   rgba(136, 156, 120, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 60% at 95% 100%, rgba(63, 76, 84, 0.25) 0%, transparent 55%),
+    var(--paper-grain);
 }
 
 h1, h2, h3, .note-title {
@@ -265,9 +277,9 @@ body {
 .note-card {
   background: var(--note-white);
   background-image: var(--paper-grain);
-  border-radius: 2px 12px 4px 12px; /* Slightly imperfect corners */
+  border-radius: 2px 12px 4px 12px;
   padding: 24px;
-  color: #252720; /* Always dark text for notes */
+  color: #252720;
   position: relative;
   cursor: pointer;
   box-shadow: var(--shadow);
@@ -279,7 +291,6 @@ body {
   animation: fadeInUp 0.4s ease both;
 }
 
-/* Imperfect rotations */
 .note-card:nth-child(3n) { transform: rotate(0.8deg); }
 .note-card:nth-child(3n+1) { transform: rotate(-0.6deg); }
 .note-card:nth-child(3n+2) { transform: rotate(0.3deg); }
@@ -583,7 +594,7 @@ body {
   .note-card {
     padding: 20px;
     min-height: 180px;
-    transform: none !important; /* Disable rotation on mobile for cleaner look */
+    transform: none !important;
   }
 
   /* Bottom Nav */
