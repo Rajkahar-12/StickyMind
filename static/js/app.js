@@ -390,7 +390,7 @@ function applyTheme(theme) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Push notifications (Preserved from Stage 6/7)                       */
+/* Push notifications                                                  */
 /* ------------------------------------------------------------------ */
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -538,6 +538,150 @@ function setupHeader() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Client-side reminders + sound                                       */
+/* ------------------------------------------------------------------ */
+
+let _audioCtx = null;
+let _audioUnlocked = false;
+
+function getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+  return _audioCtx;
+}
+
+function playBeep() {
+  try {
+    const ctx = getAudioCtx();
+    [0, 0.25].forEach((offset, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = i === 0 ? 880 : 1320;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + offset);
+      gain.gain.exponentialRampToValueAtTime(0.35, ctx.currentTime + offset + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + offset + 0.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + offset);
+      osc.stop(ctx.currentTime + offset + 0.22);
+    });
+  } catch (err) {
+    console.warn('Beep failed:', err);
+  }
+}
+
+// Browsers require a user gesture before audio can play.
+function unlockAudioOnce() {
+  if (_audioUnlocked) return;
+  try {
+    const ctx = getAudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    o.connect(g).connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.01);
+    _audioUnlocked = true;
+  } catch { /* ignore */ }
+}
+document.addEventListener('click', unlockAudioOnce, { once: true });
+document.addEventListener('keydown', unlockAudioOnce, { once: true });
+
+// Dedup across reloads: key is note-id + reminder_at, so editing a reminder
+// (which changes reminder_at) allows it to fire again.
+const FIRED_KEY = 'sm-fired-reminders';
+const firedReminders = new Set(JSON.parse(localStorage.getItem(FIRED_KEY) || '[]'));
+function saveFired() {
+  localStorage.setItem(FIRED_KEY, JSON.stringify([...firedReminders]));
+}
+
+async function checkLocalReminders() {
+  // Ask for notification permission once (non-blocking).
+  if ('Notification' in window && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch { /* ignore */ }
+  }
+
+  // Refresh from server so we see reminders the server may have marked.
+  let notes = state.notes;
+  try {
+    notes = await api('/api/notes');
+    state.notes = notes;
+  } catch { /* offline — fall back to cache */ }
+
+  const now = Date.now();
+  let anyFired = false;
+
+  for (const note of notes) {
+    if (!note.reminder_at || note.reminder_sent) continue;
+
+    const due = new Date(note.reminder_at).getTime();
+    if (isNaN(due) || due > now) continue;
+
+    const dedupKey = `note-${note.id}@${note.reminder_at}`;
+    if (firedReminders.has(dedupKey)) continue;
+
+    const title = note.title || 'StickyMind Reminder';
+    const body  = (note.content || '').slice(0, 140) || 'You have a reminder';
+
+    // 1) System notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        const reg = await navigator.serviceWorker?.getRegistration();
+        if (reg) {
+          await reg.showNotification(title, {
+            body,
+            icon: '/static/icons/icon-192.png',
+            badge: '/static/icons/icon-192.png',
+            tag: dedupKey,
+            vibrate: [200, 100, 200],
+          });
+        } else {
+          new Notification(title, {
+            body, icon: '/static/icons/icon-192.png', tag: dedupKey,
+          });
+        }
+      } catch (err) {
+        console.warn('Notification failed:', err);
+      }
+    }
+
+    // 2) Sound (always — even if notifications are blocked)
+    playBeep();
+
+    // 3) In-app toast as fallback
+    toast(`⏰ ${title}`);
+
+    // 4) Remember locally so we don't fire twice on next poll
+    firedReminders.add(dedupKey);
+    saveFired();
+    anyFired = true;
+
+    // 5) Tell the server so other tabs / future polls skip it
+    try {
+      await api(`/api/notes/${note.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ reminder_sent: true }),
+      });
+    } catch (err) {
+      console.warn('Could not mark reminder as sent:', err);
+    }
+  }
+
+  if (anyFired) await loadNotes();
+}
+
+// Poll every 30 s while the tab is open
+setInterval(checkLocalReminders, 30_000);
+
+// Listen for beep requests from the service worker (push path)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'PLAY_BEEP') playBeep();
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Boot                                                                */
 /* ------------------------------------------------------------------ */
 async function boot() {
@@ -546,6 +690,9 @@ async function boot() {
   setupHeader();
   bindEvents();
   await loadNotes();
+
+  // Kick off reminder polling shortly after notes load
+  setTimeout(checkLocalReminders, 2_000);
 
   if (typeof initNotifications === 'function') {
     initNotifications().catch((err) => console.warn('notif init:', err));
