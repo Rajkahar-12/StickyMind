@@ -1,4 +1,3 @@
-
 """
 StickyMind — Flask Backend
 Notes API, SQLite, reminders, PWA and Web Push
@@ -139,6 +138,7 @@ def validate_note_data(data, partial=False):
         "color",
         "pinned",
         "reminder_at",
+        "reminder_sent",   # <-- added: lets client mark reminders as fired
     }
 
     if not isinstance(data, dict):
@@ -183,6 +183,9 @@ def validate_note_data(data, partial=False):
 
     if "pinned" in data:
         clean["pinned"] = 1 if bool(data["pinned"]) else 0
+
+    if "reminder_sent" in data:                      # <-- added
+        clean["reminder_sent"] = 1 if bool(data["reminder_sent"]) else 0
 
     if "reminder_at" in data:
         value = data["reminder_at"]
@@ -573,6 +576,7 @@ def check_reminders():
             sent_count = send_push_to_all(payload)
 
             # Keep the reminder pending if nobody received the push.
+            # (The client-side reminder loop in app.js will fire it in-tab.)
             if sent_count > 0:
                 with get_db() as conn:
                     conn.execute("""
